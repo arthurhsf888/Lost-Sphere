@@ -12,7 +12,7 @@ void SelectSetScene::handleEvent(const SDL_Event& e) {
             gs_->set = (idx_==0? PlayerSet::Guerreiro : idx_==1? PlayerSet::Mago : PlayerSet::Cacador);
             // reset mini-inventário/recursos para cada luta
             gs_->potions = 2;
-            sm_.setActive("battle");
+            sm_.setActive("boss_intro");
         }
     }
 }

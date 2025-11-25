@@ -10,6 +10,8 @@
 #include "Text.h"
 #include "GameState.h"
 #include "scenes/SelectSetScene.h"
+#include "BossFuria.h"
+#include "scenes/BossIntroScene.h"
 
 
 // Resolve caminhos do tipo "assets/..." a partir do executável e da raiz do projeto
@@ -52,15 +54,17 @@ int main(int, char**) {
   if (!renderer) { std::cerr << "SDL_CreateRenderer erro: " << SDL_GetError() << "\n"; return 1; }
 
   Text uiText;
-  uiText.init(resolveAsset("assets/fonts/DejaVuSans.ttf"), 18); // ou a sua fonte
+  uiText.init(resolveAsset("assets/fonts/DejaVuSans.ttf"), 18);
 
   GameState gs;
+  BossFuria bossFuria;
 
   SceneManager sm;
-  sm.registerScene("menu",      std::make_unique<MenuScene>(sm, &uiText));
-  sm.registerScene("overworld", std::make_unique<OverworldScene>(sm));
-  sm.registerScene("selectset", std::make_unique<SelectSetScene>(sm, &uiText, &gs));  // <— NOVA
-  sm.registerScene("battle",    std::make_unique<BattleScene>(sm, &uiText, &gs));     // <— gs/text
+  sm.registerScene("menu",       std::make_unique<MenuScene>(sm, &uiText));
+  sm.registerScene("overworld",  std::make_unique<OverworldScene>(sm));
+  sm.registerScene("selectset",  std::make_unique<SelectSetScene>(sm, &uiText, &gs));
+  sm.registerScene("boss_intro", std::make_unique<BossIntroScene>(sm, &uiText, &bossFuria));
+  sm.registerScene("battle",     std::make_unique<BattleScene>(sm, &uiText, &gs, &bossFuria));
   sm.setActive("menu");
 
   bool running = true;

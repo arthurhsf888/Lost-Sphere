@@ -1,37 +1,42 @@
 #include "BattleScene.h"
 #include <SDL.h>
 #include <algorithm>
+#include <cmath>
 
 void BattleScene::resetFromSet() {
   // stats base
   playerHPMax_ = gs_->hpMax;
   playerSTMax_ = gs_->stMax;
 
-  // variações por set
+  // variações por set + tipos de golpe
   switch (gs_->set) {
     case PlayerSet::Guerreiro:
-      playerHPMax_ += 10;             // mais robusto
-      atkA_ = {"Corte Rapido", 3, 6};
-      atkB_ = {"Golpe Pesado", 6, 12};
+      playerHPMax_ += 10;
+      atkA_ = {"Corte Rapido", 3, 6,  DamageType::Fisico};
+      atkB_ = {"Golpe Pesado", 6, 12, DamageType::Fisico};
       break;
     case PlayerSet::Mago:
-      atkA_ = {"Bola de Fogo", 5, 10};
-      atkB_ = {"Raio",         4,  8};
+      atkA_ = {"Bola de Fogo", 5, 10, DamageType::Magico};
+      atkB_ = {"Raio",         4,  8, DamageType::Magico};
       break;
     case PlayerSet::Cacador:
-      playerSTMax_ += 4;              // melhor gestão de stamina
-      atkA_ = {"Flecha Precisa", 4, 7};
-      atkB_ = {"Tiro Triplo",    6, 11};
+      playerSTMax_ += 4;
+      atkA_ = {"Flecha Precisa", 4, 7,  DamageType::Distancia};
+      atkB_ = {"Tiro Triplo",    6, 11, DamageType::Distancia};
       break;
   }
 
   playerHP_ = playerHPMax_;
   playerST_ = playerSTMax_;
-  enemyHP_ = enemyHPMax_ = 40; // por enquanto fixo
+
+  // inicializa boss
+  boss_->hp = boss_->maxHP();
+
   phase_ = Phase::Menu;
   menuIndex_ = 0;
   atkIndex_ = 0;
   lastDamageP_ = lastDamageE_ = 0;
+  lastMsg_.clear();
 }
 
 void BattleScene::handleEvent(const SDL_Event& e) {
@@ -43,24 +48,21 @@ void BattleScene::handleEvent(const SDL_Event& e) {
     if (e.key.keysym.sym == SDLK_UP)   menuIndex_ = (menuIndex_ + 2) % 3;
     if (e.key.keysym.sym == SDLK_DOWN) menuIndex_ = (menuIndex_ + 1) % 3;
     if (e.key.keysym.sym == SDLK_RETURN) {
-      if (menuIndex_ == 0) { phase_ = Phase::ChoosingAttack; } // Atacar -> escolher golpe
-      else if (menuIndex_ == 1) { phase_ = Phase::PlayerTurn; doPlayerAction(); } // Poção
-      else if (menuIndex_ == 2) { phase_ = Phase::PlayerTurn; doPlayerAction(); } // Desviar
+      if (menuIndex_ == 0) { phase_ = Phase::ChoosingAttack; }
+      else if (menuIndex_ == 1) { phase_ = Phase::PlayerTurn; doPlayerAction(); }
+      else if (menuIndex_ == 2) { phase_ = Phase::PlayerTurn; doPlayerAction(); }
     }
-    if (e.key.keysym.sym == SDLK_ESCAPE) sm_.setActive("overworld");
+    if (e.key.keysym.sym == SDLK_ESCAPE) { initialized_ = false; sm_.setActive("overworld"); }
   }
   else if (phase_ == Phase::ChoosingAttack) {
     if (e.key.keysym.sym == SDLK_UP || e.key.keysym.sym == SDLK_DOWN)
       atkIndex_ = 1 - atkIndex_;
     if (e.key.keysym.sym == SDLK_ESCAPE) phase_ = Phase::Menu;
-    if (e.key.keysym.sym == SDLK_RETURN) {
-      phase_ = Phase::PlayerTurn;
-      doPlayerAction();
-    }
+    if (e.key.keysym.sym == SDLK_RETURN) { phase_ = Phase::PlayerTurn; doPlayerAction(); }
   }
   else if (phase_ == Phase::Win || phase_ == Phase::Lose) {
     if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_ESCAPE) {
-      initialized_ = false; // reseta na próxima vez
+      initialized_ = false;
       sm_.setActive("overworld");
     }
   }
@@ -68,33 +70,42 @@ void BattleScene::handleEvent(const SDL_Event& e) {
 
 void BattleScene::doPlayerAction() {
   lastDamageP_ = 0;
+  lastMsg_.clear();
 
   if (menuIndex_ == 0) {
-    // Atacar -> usar atkIndex_
     const Attack& atk = (atkIndex_ == 0 ? atkA_ : atkB_);
     if (playerST_ >= atk.cost) {
       playerST_ -= atk.cost;
-      lastDamageP_ = atk.dmg;
-      enemyHP_ = std::max(0, enemyHP_ - lastDamageP_);
+      // aplica multiplicador de fraqueza/resistência do boss
+      float mult = Balance::bossFuriaMultiplier(atk.type);
+      lastDamageP_ = std::max(1, int(std::round(atk.dmg * mult)));
+      boss_->hp = std::max(0, boss_->hp - lastDamageP_);
+
+      if (mult > 1.01f)      lastMsg_ = "Foi super eficaz!";
+      else if (mult < 0.99f) lastMsg_ = "Pouco eficaz...";
+      else                   lastMsg_.clear();
+    } else {
+      lastMsg_ = "Stamina insuficiente!";
     }
   } else if (menuIndex_ == 1) {
-    // Poção (usa do GameState)
     if (gs_->potions > 0) {
       gs_->potions--;
       playerHP_ = std::min(playerHPMax_, playerHP_ + 12);
+      lastMsg_ = "Voce usou uma Pocao.";
+    } else {
+      lastMsg_ = "Sem pocoes!";
     }
   } else if (menuIndex_ == 2) {
-    // Desviar: recupera stamina
     playerST_ = std::min(playerSTMax_, playerST_ + 4);
+    lastMsg_ = "Voce respirou e recuperou ST.";
   }
 
-  if (enemyHP_ <= 0) phase_ = Phase::Win;
+  if (boss_->hp <= 0) phase_ = Phase::Win;
   else phase_ = Phase::EnemyTurn;
 }
 
 void BattleScene::doEnemyAction() {
-  // inimigo placeholder: dano fixo, poderia variar por “enrage”
-  lastDamageE_ = 5;
+  lastDamageE_ = boss_->doTurn();
   playerHP_ = std::max(0, playerHP_ - lastDamageE_);
   if (playerHP_ <= 0) phase_ = Phase::Lose;
   else phase_ = Phase::Menu;
@@ -126,12 +137,12 @@ void BattleScene::render(SDL_Renderer* r) {
   SDL_SetRenderDrawColor(r, 35, 25, 45, 255);
   SDL_RenderFillRect(r, &arena);
 
-  // Barras
+  // Barras player/boss
   drawBars(r, 80, 80, 240, 16, float(playerHP_) / playerHPMax_);
-  drawBars(r, 480, 80, 240, 16, float(enemyHP_) / enemyHPMax_);
+  drawBars(r, 480, 80, 240, 16, float(boss_->hp)  / boss_->maxHP());
 
-  // Textos
   if (text_) {
+    text_->draw(r, "Chefe: " + std::string(boss_->name()) + (boss_->enraged() ? " (ENRAGE)" : ""), 480, 104);
     text_->draw(r, "Set: " + gs_->setName(), 80, 104);
     text_->draw(r, "HP: " + std::to_string(playerHP_) + "/" + std::to_string(playerHPMax_), 80, 124);
     text_->draw(r, "ST: " + std::to_string(playerST_) + "/" + std::to_string(playerSTMax_), 80, 144);
@@ -153,30 +164,24 @@ void BattleScene::render(SDL_Renderer* r) {
       if (text_) text_->draw(r, labels[i], b.x + 10, b.y + 10);
     }
   } else if (phase_ == Phase::ChoosingAttack) {
-    // submenu de golpes
     SDL_Rect b1{ 320, 390, 360, 40 };
     SDL_Rect b2{ 320, 440, 360, 40 };
-
-    // CORRIGIR estas duas linhas:
-    SDL_SetRenderDrawColor(r,
-      atkIndex_==0 ? 200 : 70,
-      atkIndex_==0 ? 200 : 70,
-      atkIndex_==0 ? 220 : 90, 255);
-    SDL_RenderFillRect(r, &b1);
-
-    SDL_SetRenderDrawColor(r,
-      atkIndex_==1 ? 200 : 70,
-      atkIndex_==1 ? 200 : 70,
-      atkIndex_==1 ? 220 : 90, 255);
-    SDL_RenderFillRect(r, &b2);
+    SDL_SetRenderDrawColor(r, atkIndex_==0?200:70, atkIndex_==0?200:70, atkIndex_==0?220:90, 255); SDL_RenderFillRect(r, &b1);
+    SDL_SetRenderDrawColor(r, atkIndex_==1?200:70, atkIndex_==1?200:70, atkIndex_==1?220:90, 255); SDL_RenderFillRect(r, &b2);
 
     if (text_) {
-      text_->draw(r, std::string(atkA_.name) + "  (ST " + std::to_string(atkA_.cost) + ", Dmg " + std::to_string(atkA_.dmg) + ")", b1.x + 10, b1.y + 10);
-      text_->draw(r, std::string(atkB_.name) + "  (ST " + std::to_string(atkB_.cost) + ", Dmg " + std::to_string(atkB_.dmg) + ")", b2.x + 10, b2.y + 10);
+      auto fmt = [](const Attack& a){
+        return std::string(a.name) + "  (ST " + std::to_string(a.cost) + ", Dmg " + std::to_string(a.dmg) + ")";
+      };
+      text_->draw(r, fmt(atkA_), b1.x + 10, b1.y + 10);
+      text_->draw(r, fmt(atkB_), b2.x + 10, b2.y + 10);
     }
   } else if (phase_ == Phase::Win || phase_ == Phase::Lose) {
     if (text_) text_->draw(r, phase_==Phase::Win ? "Vitoria! (Enter/Esc)" : "Derrota... (Enter/Esc)", 280, 420);
   }
+
+  // mensagens/feedback
+  if (text_ && !lastMsg_.empty()) text_->draw(r, lastMsg_, 320, 360);
 
   // impactos visuais simples
   if (lastDamageP_ > 0) { SDL_Rect hit{ 540, 140, 40, 40 }; SDL_SetRenderDrawColor(r, 220,120,120,255); SDL_RenderFillRect(r, &hit); }

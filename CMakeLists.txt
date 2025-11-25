@@ -18,6 +18,11 @@ add_executable(${PROJECT_NAME}
         src/scenes/OverworldScene.cpp
         src/scenes/BattleScene.cpp
         src/scenes/SelectSetScene.cpp
+        include/Balance.h
+        include/Boss.h
+        include/BossFuria.h
+        src/scenes/BossIntroScene.h
+        src/scenes/BossIntroScene.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE include)
