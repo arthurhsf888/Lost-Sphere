@@ -3,6 +3,12 @@
 #include <algorithm>
 #include <cmath>
 
+BattleScene::~BattleScene() {
+  if (texPlayer_)    SDL_DestroyTexture(texPlayer_);
+  if (bossSheet_.tex) SDL_DestroyTexture(bossSheet_.tex);
+  if (bg_)           SDL_DestroyTexture(bg_);
+}
+
 void BattleScene::resetFromSet() {
   // stats base
   playerHPMax_ = gs_->hpMax;
@@ -37,6 +43,9 @@ void BattleScene::resetFromSet() {
   atkIndex_ = 0;
   lastDamageP_ = lastDamageE_ = 0;
   lastMsg_.clear();
+
+  wasEnraged_ = boss_->enraged();
+  enrageFlash_ = 0.f;
 }
 
 void BattleScene::handleEvent(const SDL_Event& e) {
@@ -76,14 +85,23 @@ void BattleScene::doPlayerAction() {
     const Attack& atk = (atkIndex_ == 0 ? atkA_ : atkB_);
     if (playerST_ >= atk.cost) {
       playerST_ -= atk.cost;
-      // aplica multiplicador de fraqueza/resistência do boss
+
+      // multiplicador de tipo (por ora usando tabela da Fúria como exemplo)
       float mult = Balance::bossFuriaMultiplier(atk.type);
       lastDamageP_ = std::max(1, int(std::round(atk.dmg * mult)));
       boss_->hp = std::max(0, boss_->hp - lastDamageP_);
 
-      if (mult > 1.01f)      lastMsg_ = "Foi super eficaz!";
-      else if (mult < 0.99f) lastMsg_ = "Pouco eficaz...";
-      else                   lastMsg_.clear();
+      // Orgulho reflete total do dano recebido
+      if (std::string(boss_->name()) == "Orgulho" && lastDamageP_ > 0) {
+        playerHP_ = std::max(0, playerHP_ - lastDamageP_);
+        lastMsg_ += (lastMsg_.empty() ? "" : " ") + std::string("O chefe refletiu o dano!");
+      }
+
+      // feedback de eficácia (sem sobrescrever o que já houve)
+      if (mult > 1.01f)
+        lastMsg_ += (lastMsg_.empty() ? "" : " ") + std::string("Foi super eficaz!");
+      else if (mult < 0.99f)
+        lastMsg_ += (lastMsg_.empty() ? "" : " ") + std::string("Pouco eficaz...");
     } else {
       lastMsg_ = "Stamina insuficiente!";
     }
@@ -111,8 +129,22 @@ void BattleScene::doEnemyAction() {
   else phase_ = Phase::Menu;
 }
 
-void BattleScene::update(float) {
+void BattleScene::update(float dt) {
   if (phase_ == Phase::EnemyTurn) doEnemyAction();
+
+  // animação de idle dos bosses (se quiser usar depois)
+  animBoss_.fps = 4.f;
+  animBoss_.count = 2;
+  animBoss_.update(dt);
+
+  // VFX timers
+  tBoss_ += dt;
+  if (enrageFlash_ > 0.f) enrageFlash_ = std::max(0.f, enrageFlash_ - dt);
+
+  // detectar transição para enrage
+  bool enr = boss_->enraged();
+  if (enr && !wasEnraged_) enrageFlash_ = 0.25f;
+  wasEnraged_ = enr;
 }
 
 void BattleScene::drawBars(SDL_Renderer* r, int x, int y, int w, int h, float ratio) {
@@ -127,20 +159,61 @@ void BattleScene::drawBars(SDL_Renderer* r, int x, int y, int w, int h, float ra
 }
 
 void BattleScene::render(SDL_Renderer* r) {
+  // --- Fundo / Background ---
+  if (!bg_) {
+    std::string path = "assets/backgrounds/default.png";
+    auto n = std::string(boss_->name());
+    if (n == "Furia")      path = "assets/backgrounds/furia_bg.png";
+    else if (n == "Tempo") path = "assets/backgrounds/tempo_bg.png";
+    else if (n == "Silencio") path = "assets/backgrounds/silencio_bg.png";
+    else if (n == "Orgulho")  path = "assets/backgrounds/orgulho_bg.png";
+    bg_ = loadTexture(r, path);
+  }
+
+  if (bg_) {
+    SDL_Rect full{0,0,1280,720};
+    SDL_RenderCopy(r, bg_, nullptr, &full);
+  } else {
+    SDL_SetRenderDrawColor(r, 18,12,20,255);
+    SDL_RenderClear(r);
+  }
+
   if (!initialized_) { resetFromSet(); initialized_ = true; }
 
-  SDL_SetRenderDrawColor(r, 18, 12, 20, 255);
-  SDL_RenderClear(r);
-
-  // Arena
-  SDL_Rect arena{ 60, 60, 680, 280 };
-  SDL_SetRenderDrawColor(r, 35, 25, 45, 255);
-  SDL_RenderFillRect(r, &arena);
+  // Arena (sobre o fundo)
+  //SDL_Rect arena{ 60, 60, 680, 280 };
+  //SDL_SetRenderDrawColor(r, 35, 25, 45, 255);
+  //SDL_RenderFillRect(r, &arena);
 
   // Barras player/boss
   drawBars(r, 80, 80, 240, 16, float(playerHP_) / playerHPMax_);
   drawBars(r, 480, 80, 240, 16, float(boss_->hp)  / boss_->maxHP());
 
+  // Player
+  if (!texPlayer_) texPlayer_ = loadTexture(r, "assets/sprites/player/battle_idle.png");
+  SDL_Rect playerDst{ 140, 210, 64, 64 };
+  if (texPlayer_) SDL_RenderCopy(r, texPlayer_, nullptr, &playerDst);
+  else { SDL_SetRenderDrawColor(r, 200, 220, 240, 255); SDL_RenderFillRect(r, &playerDst); }
+
+  // Boss via SpriteSheet
+  if (!bossSheet_.tex) {
+    SpriteInfo si = boss_->sprite();
+    bossSheet_ = loadSpriteSheet(r, si.path, si.fw, si.fh);
+  }
+  SpriteInfo si = boss_->sprite();
+  SDL_Rect bossDst{ 560, 170, si.fw, si.fh };
+  int idx = si.idleIdx;
+  if (si.enrageIdx >= 0 && boss_->enraged()) idx = si.enrageIdx;
+
+  if (bossSheet_.tex) {
+    SDL_Rect src = bossSheet_.frameRect(idx);
+    SDL_RenderCopy(r, bossSheet_.tex, &src, &bossDst);
+  } else {
+    SDL_SetRenderDrawColor(r, 220, 120, 120, 255);
+    SDL_RenderFillRect(r, &bossDst);
+  }
+
+  // Textos
   if (text_) {
     text_->draw(r, "Chefe: " + std::string(boss_->name()) + (boss_->enraged() ? " (ENRAGE)" : ""), 480, 104);
     text_->draw(r, "Set: " + gs_->setName(), 80, 104);
@@ -150,9 +223,9 @@ void BattleScene::render(SDL_Renderer* r) {
   }
 
   // Painel inferior
-  SDL_Rect panel{ 60, 360, 680, 180 };
-  SDL_SetRenderDrawColor(r, 25, 25, 35, 255);
-  SDL_RenderFillRect(r, &panel);
+  //SDL_Rect panel{ 60, 360, 680, 180 };
+  //SDL_SetRenderDrawColor(r, 25, 25, 35, 255);
+  //SDL_RenderFillRect(r, &panel);
 
   if (phase_ == Phase::Menu) {
     const char* labels[3] = {"Atacar","Pocao","Desviar"};
@@ -180,7 +253,6 @@ void BattleScene::render(SDL_Renderer* r) {
     if (text_) text_->draw(r, phase_==Phase::Win ? "Vitoria! (Enter/Esc)" : "Derrota... (Enter/Esc)", 280, 420);
   }
 
-  // mensagens/feedback
   if (text_ && !lastMsg_.empty()) text_->draw(r, lastMsg_, 320, 360);
 
   // impactos visuais simples

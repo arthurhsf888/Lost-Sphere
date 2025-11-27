@@ -1,29 +1,22 @@
 #pragma once
-#include "Balance.h"
 #include <string>
+
+struct SpriteInfo {
+    std::string path;
+    int fw = 96, fh = 96;  // frame width/height
+    int cols = 3, rows = 4;
+    int idleIdx = 0;       // frame “parado”
+    int enrageIdx = -1;    // frame enrage; -1 se não usar
+};
 
 class Boss {
 public:
+    int hp = 0;
     virtual ~Boss() = default;
 
     virtual const char* name() const = 0;
-    virtual const char* intro() const = 0;
-
     virtual int  maxHP() const = 0;
-    virtual int  attackBase() const = 0;         // dano base por turno
-    virtual int  enrageThreshold() const = 0;    // % (0..100)
-    virtual int  enrageBonus() const = 0;        // +dano quando enraged
-
-    // Estado
-    int hp = 0;
-
-    // Entra em "enrage" quando HP <= threshold%
-    bool enraged() const {
-        return hp <= (maxHP() * enrageThreshold() / 100);
-    }
-
-    // Dano do boss este turno (padrão = 1 ataque fixo)
-    virtual int doTurn() {
-        return (enraged() ? attackBase() + enrageBonus() : attackBase());
-    }
+    virtual bool enraged() const { return false; }
+    virtual int  doTurn() = 0;              // dano causado ao player
+    virtual SpriteInfo sprite() const = 0;  // infos visuais p/ BattleScene
 };
