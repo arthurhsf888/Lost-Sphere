@@ -5,13 +5,14 @@
 #include "SpriteSheet.h"
 #include "Anim.h"
 #include "Text.h"
-#include <vector>
 #include "TileMap.h"
+#include "GameState.h"
+#include <vector>
 
 class OverworldScene : public Scene {
 public:
-    explicit OverworldScene(SceneManager& sm, Text* text = nullptr)
-      : sm_(sm), text_(text) {}
+    explicit OverworldScene(SceneManager& sm, Text* text, GameState* gs)
+      : sm_(sm), text_(text), gs_(gs) {}
     ~OverworldScene() override;
 
     void handleEvent(const SDL_Event& e) override;
@@ -19,15 +20,9 @@ public:
     void render(SDL_Renderer* r) override;
 
 private:
-    // ------------------------------------------------------------
     // Layout da tela (resolução lógica fixa)
-    // ------------------------------------------------------------
-    static constexpr int VW      = 1280; // virtual width
-    static constexpr int VH      = 720;  // virtual height
-    static constexpr int BORDER  = 24;   // espessura das paredes
-    static constexpr int MARGIN  = 32;   // distância dos portais à borda
-    static constexpr int PSIZE   = 56;   // tamanho (quadrado) do portal
-    // ------------------------------------------------------------
+    static constexpr int VW = 1280;
+    static constexpr int VH = 720;
 
     TileMap map_;
     bool mapLoaded_ = false;
@@ -36,19 +31,15 @@ private:
 
     SceneManager& sm_;
     Text* text_ = nullptr;
+    GameState* gs_ = nullptr;   // <-- para saber qual batalha abrir depois
 
     // posição/velocidade do player
-    SDL_FRect player_{ (VW - 32) * 0.5f, (VH - 32) * 0.5f, 32.f, 32.f };
+    SDL_FRect player_{ VW - 32.f - 700.f, VH - 32.f - 150.f, 32.f, 32.f };
     float speed_ = 160.f;
     float vx_ = 0.f, vy_ = 0.f;
 
-    // colisão (moldura retangular: top/bottom/left/right)
-    std::vector<SDL_Rect> walls_{
-        { BORDER,               BORDER,               VW - 2*BORDER, BORDER },          // topo
-        { BORDER,               VH - 2*BORDER,        VW - 2*BORDER, BORDER },         // base
-        { BORDER,               BORDER,               BORDER,          VH - 2*BORDER }, // esquerda
-        { VW - 2*BORDER,        BORDER,               BORDER,          VH - 2*BORDER }  // direita
-    };
+    // (antigas paredes de moldura – atualmente não usadas)
+    std::vector<SDL_Rect> walls_{};
 
     struct Portal {
         SDL_Rect rect;
@@ -56,27 +47,27 @@ private:
         char label;           // rótulo no portal
     };
 
-    // Portais próximos às pontas (topo-esq, topo-dir, base-esq, base-dir)
+    // Portais em posições fixas
     std::vector<Portal> portals_{
-        { { MARGIN,                MARGIN,                PSIZE, PSIZE }, "battle_furia",    'F' },
-        { { VW - MARGIN - PSIZE,   MARGIN,                PSIZE, PSIZE }, "battle_tempo",    'T' },
-        { { MARGIN,                VH - MARGIN - PSIZE,   PSIZE, PSIZE }, "battle_silencio", 'S' },
-        { { VW - MARGIN - PSIZE,   VH - MARGIN - PSIZE,   PSIZE, PSIZE }, "battle_orgulho",  'O' },
+        { {  50,  35, 56, 56 }, "battle_furia",    'F' },
+        { { 770,  60, 56, 56 }, "battle_tempo",    'T' },
+        { {  50, 470, 56, 56 }, "battle_silencio", 'S' },
+        { { 800, 450, 56, 56 }, "battle_orgulho",  'O' },
     };
 
     // helpers de colisão
     static bool aabbIntersect(const SDL_FRect& a, const SDL_Rect& b);
     void resolveCollisions(SDL_FRect& next);
+    bool collidesWithSolidTiles(const SDL_FRect& r) const;
 
     // direção/animação do player
-    Dir  facing_ = Dir::Down;   // última direção
+    Dir  facing_ = Dir::Down;
     bool moving_ = false;
-    Anim anim_;                 // controla tempo/fps da caminhada
+    Anim anim_;
 
     // sprites
-    SpriteSheet  playerSheet_;  // sheet do player (overworld)
-    SDL_Texture* texPortal_ = nullptr;
+    SpriteSheet  playerSheet_;   // sheet do player (overworld)
+    SpriteSheet  portalSheet_;   // sheet dos portais (3x2 de 32x32)
 
-    // util: primeiro índice da linha da direção atual
     int baseIndexForDir(Dir d) const;
 };

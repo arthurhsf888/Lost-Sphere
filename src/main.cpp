@@ -92,7 +92,7 @@ int main(int, char**) {
   // ---- Cenas ----
   SceneManager sm;
   sm.registerScene("menu",       std::make_unique<MenuScene>(sm, &uiText));
-  sm.registerScene("overworld",  std::make_unique<OverworldScene>(sm, &uiText));
+  sm.registerScene("overworld",  std::make_unique<OverworldScene>(sm, &uiText, &gs));
   sm.registerScene("selectset",  std::make_unique<SelectSetScene>(sm, &uiText, &gs));
 
   // batalhas específicas para cada portal

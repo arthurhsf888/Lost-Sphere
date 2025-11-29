@@ -5,15 +5,18 @@ enum class PlayerSet { Guerreiro, Mago, Cacador };
 
 struct GameState {
     PlayerSet set = PlayerSet::Guerreiro;
-    int potions = 2;
+    int potions   = 2;
 
     // stats base (você pode balancear depois)
-    int hpMax = 50;
-    int stMax = 20;
+    int hpMax   = 50;
+    int stMax   = 20;
     int atkBase = 5;
 
+    // cena de batalha para onde devemos ir após escolher o set
+    std::string nextBattleSceneId = "battle_furia";
+
     std::string setName() const {
-        switch(set){
+        switch (set) {
             case PlayerSet::Guerreiro: return "Guerreiro";
             case PlayerSet::Mago:      return "Mago";
             default:                   return "Caçador";
