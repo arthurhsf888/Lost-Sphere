@@ -59,7 +59,7 @@ private:
     };
 
     // --- Porta final (posição pode ser ajustada à vontade) ---
-    SDL_Rect door_{ 1100, 400, 64, 96 };
+    SDL_Rect    door_{ 1110, 400, 64, 96 };
     SDL_Texture* doorTex_ = nullptr;
 
     // helpers de colisão
@@ -78,6 +78,11 @@ private:
 
     // Mensagens temporárias
     MessageBox msgBox_;
+
+    // Controle de música/SFX
+    bool  musicStarted_ = false;
+    float stepTimer_    = 0.f;
+    bool  stepToggle_   = false;
 
     int baseIndexForDir(Dir d) const;
 };

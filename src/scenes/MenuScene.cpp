@@ -1,11 +1,15 @@
 #include "MenuScene.h"
 #include "Assets.h"
+#include "../SoundManager.h"
 #include <SDL.h>
 #include <array>
 #include <string>
 
-// Quantidade de itens do menu (Overworld, Sair)
+// Quantidade de itens do menu (Iniciar, Sair)
 constexpr int MENU_ITEMS = 2;
+
+// instância global do gerenciador de som
+extern SoundManager gSound;
 
 // Helper para obter o tamanho lógico atual do renderer
 static inline void get_render_size(SDL_Renderer* r, int& w, int& h) {
@@ -15,16 +19,25 @@ static inline void get_render_size(SDL_Renderer* r, int& w, int& h) {
 
 void MenuScene::handleEvent(const SDL_Event& e) {
     if (e.type == SDL_KEYDOWN) {
+        const SDL_Keycode key = e.key.keysym.sym;
+
         // Navegação simples com ↑ e ↓
-        if (e.key.keysym.sym == SDLK_UP)
+        if (key == SDLK_UP) {
             selected_ = (selected_ + MENU_ITEMS - 1) % MENU_ITEMS;
-        if (e.key.keysym.sym == SDLK_DOWN)
+            if (gSound.ok()) gSound.playSfx("select_button");   // <-- antes era "select_button"
+        }
+        if (key == SDLK_DOWN) {
             selected_ = (selected_ + 1) % MENU_ITEMS;
+            if (gSound.ok()) gSound.playSfx("select_button");   // <-- antes era "select_button"
+        }
 
         // Enter confirma a opção
-        if (e.key.keysym.sym == SDLK_RETURN) {
+        if (key == SDLK_RETURN) {
+            if (gSound.ok()) gSound.playSfx("click_button");
+
             if (selected_ == 0) {
-                // Vai para o overworld
+                // Vai para o overworld + música do overworld
+                if (gSound.ok()) gSound.playMusic("overworld_theme", -1);
                 sm_.setActive("overworld");
             } else if (selected_ == 1) {
                 // Sair do jogo
@@ -70,7 +83,7 @@ void MenuScene::render(SDL_Renderer* r) {
     const int Y0 = (H - totalH) / 2 + 90;
 
     std::array<SDL_Rect, MENU_ITEMS> items{
-        SDL_Rect{ X, Y0 + 0 * (BH + GAP), BW, BH }, // Overworld
+        SDL_Rect{ X, Y0 + 0 * (BH + GAP), BW, BH }, // Iniciar
         SDL_Rect{ X, Y0 + 1 * (BH + GAP), BW, BH }  // Sair
     };
 

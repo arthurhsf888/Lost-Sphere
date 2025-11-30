@@ -73,7 +73,7 @@ private:
     void doEnemyAction();
     void drawBars(SDL_Renderer* r, int x, int y, int w, int h, float ratio);
 
-    // NOVO: marca que o boss foi derrotado (GameState)
+    // marca que o boss foi derrotado (GameState)
     void markBossDefeated();
 
     bool initialized_ = false;

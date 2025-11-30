@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(SDL2 CONFIG REQUIRED)          # SDL2-2.32.2
 find_package(SDL2_ttf CONFIG REQUIRED)      # SDL2_ttf-2.20.2
 find_package(SDL2_image CONFIG REQUIRED)    # SDL2_image-2.8.8
+find_package(SDL2_mixer CONFIG REQUIRED)
 
 add_executable(${PROJECT_NAME}
         src/main.cpp
@@ -20,6 +21,7 @@ add_executable(${PROJECT_NAME}
         src/scenes/SelectSetScene.cpp
         src/scenes/BossIntroScene.cpp
         src/TileMap.cpp
+        src/SoundManager.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE include)
@@ -29,6 +31,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         SDL2::SDL2main
         SDL2_ttf::SDL2_ttf
         SDL2_image::SDL2_image
+        SDL2_mixer::SDL2_mixer
 )
 
 # Copiar DLLs pro lado do executável (Windows)
@@ -40,5 +43,7 @@ if (WIN32)
           "$<TARGET_FILE:SDL2_ttf::SDL2_ttf>" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "$<TARGET_FILE:SDL2_image::SDL2_image>"   "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "$<TARGET_FILE:SDL2_mixer::SDL2_mixer>"   "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
   )
 endif()

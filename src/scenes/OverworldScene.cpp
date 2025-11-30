@@ -1,6 +1,10 @@
 #include "OverworldScene.h"
 #include <SDL.h>
 #include <string>
+#include "../SoundManager.h"
+
+// instância global declarada em outro lugar (ex: main.cpp)
+extern SoundManager gSound;
 
 OverworldScene::~OverworldScene() {
     if (playerSheet_.tex) SDL_DestroyTexture(playerSheet_.tex);
@@ -87,8 +91,12 @@ void OverworldScene::handleEvent(const SDL_Event& e) {
                 // 1) Porta final
                 if (aabbIntersect(player_, door_)) {
                     if (gs_ && gs_->allBossesDefeated()) {
+                        // toca música de jogo zerado
+                        if (gSound.ok()) {
+                            gSound.playMusic("game_clear", 0);
+                        }
                         msgBox_.show("Voce voltou para casa! Fim da jornada.", 4.0f);
-                        // Aqui você poderia ir para uma cena de créditos/menu
+                        // aqui você poderia ir para uma cena de créditos/menu_final
                         // ex: sm_.setActive("menu_final");
                     } else {
                         msgBox_.show("A porta esta trancada...");
@@ -118,7 +126,10 @@ void OverworldScene::handleEvent(const SDL_Event& e) {
                         break;
                     }
 
-                    // Portal ainda ativo → segue para seleção de classe
+                    // Portal ainda ativo → som de entrar no portal + seleção de classe
+                    if (gSound.ok()) {
+                        gSound.playSfx("enter_portal");
+                    }
                     gs_->nextBattleSceneId = p.battleSceneId;
                     gs_->lastPortalId      = p.id;
                     sm_.setActive("selectset");
@@ -143,15 +154,42 @@ int OverworldScene::baseIndexForDir(Dir d) const {
 }
 
 void OverworldScene::update(float dt) {
+    // Garantir que a música do overworld esteja tocando
+    if (!musicStarted_) {
+        if (gSound.ok()) {
+            gSound.playMusic("overworld_theme", -1);
+        }
+        musicStarted_ = true;
+    }
+
     SDL_FRect next = player_;
     next.x += vx_ * speed_ * dt;
     next.y += vy_ * speed_ * dt;
     resolveCollisions(next);
 
+    bool wasMoving = moving_;
     moving_ = (vx_ != 0.f || vy_ != 0.f);
 
     anim_.fps = 8.f;   // velocidade da caminhada
     anim_.update(dt);
+
+    // Passos do herói
+    if (moving_) {
+        stepTimer_ -= dt;
+        if (stepTimer_ <= 0.f) {
+            if (gSound.ok()) {
+                // alterna entre passo1 e passo2
+                gSound.playSfx(stepToggle_ ? "step2" : "step1");
+            }
+            stepToggle_ = !stepToggle_;
+            stepTimer_ = 0.35f; // intervalo entre passos (ajuste à vontade)
+        }
+    } else {
+        // parou de andar -> reinicia timer pra primeiro passo sair rápido
+        if (wasMoving) {
+            stepTimer_ = 0.f;
+        }
+    }
 
     // atualiza mensagem temporária
     msgBox_.update(dt);
@@ -178,11 +216,11 @@ void OverworldScene::render(SDL_Renderer* r) {
 
     // carregar sheet do player (uma vez)
     if (!playerSheet_.tex) {
-        const int FRAME_W = 32;
-        const int FRAME_H = 32;
+        const int FRAME_W = 48;
+        const int FRAME_H = 48;
         playerSheet_ = loadSpriteSheet(
             r,
-            "assets/sprites/player/player.png", // spritesheet 736x128
+            "assets/sprites/player/george.png",
             FRAME_W, FRAME_H
         );
         if (playerSheet_.tex) {

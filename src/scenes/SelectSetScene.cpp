@@ -1,19 +1,37 @@
 #include "SelectSetScene.h"
 #include "Assets.h"      // para loadTexture
+#include "../SoundManager.h"
 #include <SDL.h>
 #include <array>
 
+// instância global do gerenciador de som (definida em outro lugar, ex: main.cpp)
+extern SoundManager gSound;
+
 void SelectSetScene::handleEvent(const SDL_Event& e) {
     if (e.type == SDL_KEYDOWN) {
-        if (e.key.keysym.sym == SDLK_UP)   idx_ = (idx_ + 2) % 3;
-        if (e.key.keysym.sym == SDLK_DOWN) idx_ = (idx_ + 1) % 3;
+        const SDL_Keycode key = e.key.keysym.sym;
 
-        if (e.key.keysym.sym == SDLK_ESCAPE) {
+        if (key == SDLK_UP) {
+            idx_ = (idx_ + 2) % 3;
+            if (gSound.ok()) gSound.playSfx("select_button");   // <-- antes era "select_button"
+        }
+        if (key == SDLK_DOWN) {
+            idx_ = (idx_ + 1) % 3;
+            if (gSound.ok()) gSound.playSfx("select_button");   // <-- antes era "select_button"
+        }
+
+        if (key == SDLK_ESCAPE) {
+            // som de "voltar"
+            if (gSound.ok()) gSound.playSfx("click_button");
+            // volta pro overworld e garante música do overworld
+            if (gSound.ok()) gSound.playMusic("overworld_theme", -1);
             sm_.setActive("overworld");
         }
 
-        if (e.key.keysym.sym == SDLK_RETURN) {
+        if (key == SDLK_RETURN) {
             if (!gs_) return;
+
+            if (gSound.ok()) gSound.playSfx("click_button");
 
             // define o set escolhido
             gs_->set = (idx_ == 0 ? PlayerSet::Guerreiro
@@ -29,6 +47,7 @@ void SelectSetScene::handleEvent(const SDL_Event& e) {
             } else {
                 sm_.setActive("battle_furia");
             }
+            // A BattleScene já cuida de tocar "battle_theme" no resetFromSet()
         }
     }
 }

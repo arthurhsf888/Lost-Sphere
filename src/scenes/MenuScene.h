@@ -21,6 +21,6 @@ private:
   SceneManager& sm_;
   Text* text_ = nullptr;
 
-  int selected_ = 0;          // <— FALTAVA
-  SDL_Texture* bg_ = nullptr; // <— fundo opcional
+  int selected_ = 0;
+  SDL_Texture* bg_ = nullptr; // fundo do menu
 };

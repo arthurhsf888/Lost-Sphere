@@ -1,6 +1,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
+#include <SDL_mixer.h>
 #include <iostream>
 #include <filesystem>
 
@@ -18,6 +19,12 @@
 #include "BossTempo.h"
 #include "BossSilencio.h"
 #include "BossOrgulho.h"
+
+#include "SoundManager.h"   // <-- novo
+
+// Definição global (AQUI é a definição, sem extern)
+SoundManager gSound;
+
 
 // Resolve caminhos "assets/..." a partir do executável/raiz do projeto
 static std::string resolveAsset(const std::string& rel) {
@@ -61,18 +68,52 @@ int main(int, char**) {
     // ainda dá pra rodar sem texto, mas ideal é ter TTF funcionando
   }
 
+  // SDL_mixer
+  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+    std::cerr << "Mix_OpenAudio erro: " << Mix_GetError() << "\n";
+    // o jogo ainda roda, só fica sem som
+  } else {
+    Mix_AllocateChannels(16); // opcional
+  }
+
+  // Inicializa SoundManager e carrega todos os áudios
+  if (!gSound.init()) {
+    std::cerr << "Erro ao inicializar SoundManager\n";
+  } else {
+    // loadAll() sem parâmetros, conforme seu header
+    if (!gSound.loadAll()) {
+      std::cerr << "Erro ao carregar sons (SoundManager::loadAll)\n";
+    } else {
+      // Se tudo deu certo, toca a música do menu em loop
+      if (gSound.ok()) {
+        gSound.playMusic("menu_music", -1);   // <-- ID precisa existir no loadAll()
+      }
+    }
+  }
+
   SDL_Window* window = SDL_CreateWindow(
       "Lost Sphere (skeleton)",
       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       1280, 720, SDL_WINDOW_SHOWN);
   if (!window) {
     std::cerr << "SDL_CreateWindow erro: " << SDL_GetError() << "\n";
+    gSound.shutdown();
+    Mix_CloseAudio();
+    TTF_Quit();
+    IMG_Quit();
+    SDL_Quit();
     return 1;
   }
 
   SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!renderer) {
     std::cerr << "SDL_CreateRenderer erro: " << SDL_GetError() << "\n";
+    SDL_DestroyWindow(window);
+    gSound.shutdown();
+    Mix_CloseAudio();
+    TTF_Quit();
+    IMG_Quit();
+    SDL_Quit();
     return 1;
   }
 
@@ -132,6 +173,10 @@ int main(int, char**) {
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
+
+  gSound.shutdown();   // encerra e libera chunks/músicas
+  Mix_CloseAudio();
+
   TTF_Quit();
   IMG_Quit();
   SDL_Quit();
