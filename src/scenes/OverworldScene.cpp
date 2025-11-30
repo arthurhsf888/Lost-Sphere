@@ -81,7 +81,7 @@ void OverworldScene::handleEvent(const SDL_Event& e) {
                 break;
 
             case SDLK_ESCAPE:
-                sm_.setActive("menu");
+                sm_.setActive("overworld");
                 break;
 
             case SDLK_e: {

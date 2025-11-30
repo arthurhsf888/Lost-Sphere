@@ -3,10 +3,27 @@
 
 struct SpriteInfo {
     std::string path;
-    int fw = 96, fh = 96;  // frame width/height
-    int cols = 3, rows = 4;
-    int idleIdx = 0;       // frame “parado”
-    int enrageIdx = -1;    // frame enrage; -1 se não usar
+
+    // Tamanho de cada frame
+    int fw   = 96;
+    int fh   = 96;
+
+    // Layout do spritesheet
+    int cols = 3;
+    int rows = 4;
+
+    // Frame “parado”
+    int idleIdx   = 0;
+
+    // Frame especial de enrage; -1 se não usar
+    int enrageIdx = -1;
+
+    // --- NOVO: animação de ataque ---
+    // Índice inicial (0-based) da sequência de ataque
+    // e quantos frames ela possui.
+    // Se attackStartIdx < 0 ou attackCount <= 0, não anima ataque.
+    int attackStartIdx = -1;
+    int attackCount    = 0;
 };
 
 class Boss {
