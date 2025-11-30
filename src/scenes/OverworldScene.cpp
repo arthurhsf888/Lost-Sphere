@@ -1,10 +1,11 @@
 #include "OverworldScene.h"
 #include <SDL.h>
-#include <string>   // para std::string nos rótulos
+#include <string>
 
 OverworldScene::~OverworldScene() {
     if (playerSheet_.tex) SDL_DestroyTexture(playerSheet_.tex);
     if (portalSheet_.tex) SDL_DestroyTexture(portalSheet_.tex);
+    if (doorTex_)         SDL_DestroyTexture(doorTex_);
 }
 
 bool OverworldScene::aabbIntersect(const SDL_FRect& a, const SDL_Rect& b) {
@@ -15,9 +16,6 @@ bool OverworldScene::aabbIntersect(const SDL_FRect& a, const SDL_Rect& b) {
 // Verifica se o retângulo r toca algum tile sólido do mapa
 bool OverworldScene::collidesWithSolidTiles(const SDL_FRect& r) const {
     if (!mapLoaded_) return false;
-
-    const int tileW = map_.tileW();
-    const int tileH = map_.tileH();
 
     const int inset = 1; // checa levemente para dentro do retângulo
 
@@ -81,19 +79,50 @@ void OverworldScene::handleEvent(const SDL_Event& e) {
                 break;
 
             case SDLK_ESCAPE:
+                // aqui você pode trocar para "menu" se tiver
                 sm_.setActive("overworld");
                 break;
 
             case SDLK_e: {
-                // Encostando em algum portal → define batalha e vai para seleção de classe
+                // 1) Porta final
+                if (aabbIntersect(player_, door_)) {
+                    if (gs_ && gs_->allBossesDefeated()) {
+                        msgBox_.show("Voce voltou para casa! Fim da jornada.", 4.0f);
+                        // Aqui você poderia ir para uma cena de créditos/menu
+                        // ex: sm_.setActive("menu_final");
+                    } else {
+                        msgBox_.show("A porta esta trancada...");
+                    }
+                    break;
+                }
+
+                // 2) Portais
                 for (const auto& p : portals_) {
-                    if (aabbIntersect(player_, p.rect)) {
-                        if (gs_) {
-                            gs_->nextBattleSceneId = p.battleSceneId; // batalha alvo
-                        }
+                    if (!aabbIntersect(player_, p.rect))
+                        continue;
+
+                    if (!gs_) {
                         sm_.setActive("selectset");
                         break;
                     }
+
+                    // checar se este portal já foi limpado
+                    bool defeated = false;
+                    if      (p.id == "furia")    defeated = gs_->deadFuria;
+                    else if (p.id == "tempo")    defeated = gs_->deadTempo;
+                    else if (p.id == "silencio") defeated = gs_->deadSilencio;
+                    else if (p.id == "orgulho")  defeated = gs_->deadOrgulho;
+
+                    if (defeated) {
+                        msgBox_.show("Portal dissipado.");
+                        break;
+                    }
+
+                    // Portal ainda ativo → segue para seleção de classe
+                    gs_->nextBattleSceneId = p.battleSceneId;
+                    gs_->lastPortalId      = p.id;
+                    sm_.setActive("selectset");
+                    break;
                 }
             } break;
         }
@@ -123,6 +152,9 @@ void OverworldScene::update(float dt) {
 
     anim_.fps = 8.f;   // velocidade da caminhada
     anim_.update(dt);
+
+    // atualiza mensagem temporária
+    msgBox_.update(dt);
 }
 
 void OverworldScene::render(SDL_Renderer* r) {
@@ -168,31 +200,59 @@ void OverworldScene::render(SDL_Renderer* r) {
         );
     }
 
-    // desenhar portais + rótulos
+    // carregar textura da porta final (uma vez)
+    if (!doorTex_) {
+        doorTex_ = loadTexture(r, "assets/sprites/portal/door.png");
+    }
+
+    // --- Porta final como sprite ---
+    if (doorTex_) {
+        SDL_RenderCopy(r, doorTex_, nullptr, &door_);
+    } else {
+        // fallback: retângulo amarelo se textura não carregar
+        SDL_SetRenderDrawColor(r, 200, 180, 40, 255);
+        SDL_RenderFillRect(r, &door_);
+    }
+
+    // desenhar portais + rótulos (somente se ainda não derrotados)
     if (portalSheet_.tex) {
         const int frameIdx = 0; // usa sempre o primeiro portal
 
         for (const auto& p : portals_) {
+            bool defeated = false;
+            if (gs_) {
+                if      (p.id == "furia")    defeated = gs_->deadFuria;
+                else if (p.id == "tempo")    defeated = gs_->deadTempo;
+                else if (p.id == "silencio") defeated = gs_->deadSilencio;
+                else if (p.id == "orgulho")  defeated = gs_->deadOrgulho;
+            }
+
+            if (defeated) {
+                // portal dissipado: não desenhar
+                continue;
+            }
+
             SDL_Rect src = portalSheet_.frameRect(frameIdx);
             SDL_Rect dst = p.rect;
             SDL_RenderCopy(r, portalSheet_.tex, &src, &dst);
 
             if (text_) {
+                SDL_Color white{230,230,240,255};
                 int tx = dst.x + dst.w/2 - 6;
                 int ty = dst.y + dst.h/2 - 10;
                 std::string s(1, p.label);
-                text_->draw(r, s, tx, ty);
+                text_->draw(r, s, tx, ty, white);
             }
         }
     }
 
-    // ---- desenhar player com animação Idle/Run/Costas + flip + scale 120% ----
+    // ---- desenhar player com animação Idle/Run/Costas + flip + scale 150% ----
     if (playerSheet_.tex && playerSheet_.cols > 0 && playerSheet_.rows > 0) {
         const int cols = playerSheet_.cols;
 
         // Você informou (1-based):
         //  - Parado:   col = 1,  row = 3
-        //  - Correndo: col = 2,  row = 3
+        //  - Correndo: col = 4,  row = 3
         //  - De costas:col = 19, row = 3
         const int row1      = 3;
         const int colIdle1  = 1;
@@ -209,19 +269,15 @@ void OverworldScene::render(SDL_Renderer* r) {
         SDL_RendererFlip flip = SDL_FLIP_NONE;
 
         if (facing_ == Dir::Up) {
-            // sprite de costas (sem flip)
             col  = colBack;
             flip = SDL_FLIP_NONE;
         } else {
-            // frente/lado: usamos sempre a animação "de lado" (direita)
-            // e espelhamos quando estiver indo pra esquerda.
             if (moving_) col = colRun;
             else         col = colIdle;
 
             if (facing_ == Dir::Left) {
                 flip = SDL_FLIP_HORIZONTAL;
             } else {
-                // Right / Down usam o sprite normal (de lado pra direita)
                 flip = SDL_FLIP_NONE;
             }
         }
@@ -229,7 +285,6 @@ void OverworldScene::render(SDL_Renderer* r) {
         int idx = row * cols + col;
         SDL_Rect src = playerSheet_.frameRect(idx);
 
-        // escala visual 120% (sem mexer na hitbox / colisão)
         const float SCALE = 1.5f;
         SDL_Rect dst;
         dst.w = int(player_.w * SCALE);
@@ -243,6 +298,9 @@ void OverworldScene::render(SDL_Renderer* r) {
         SDL_SetRenderDrawColor(r, 230, 230, 240, 255);
         SDL_RenderFillRect(r, &pr);
     }
+
+    // --- Mensagem temporária (Portal dissipado, porta trancada, fim, etc) ---
+    msgBox_.render(r, text_, 480, 40);
 
     SDL_RenderPresent(r);
 }

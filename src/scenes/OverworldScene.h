@@ -6,8 +6,10 @@
 #include "Anim.h"
 #include "Text.h"
 #include "TileMap.h"
-#include "GameState.h"
+#include "../GameState.h"
+#include "MessageBox.h"
 #include <vector>
+#include <string>
 
 class OverworldScene : public Scene {
 public:
@@ -43,17 +45,22 @@ private:
 
     struct Portal {
         SDL_Rect rect;
+        std::string id;            // "furia", "tempo", "silencio", "orgulho"
         const char* battleSceneId;
-        char label;           // rótulo no portal
+        char label;                // rótulo no portal
     };
 
     // Portais em posições fixas
     std::vector<Portal> portals_{
-        { {  50,  35, 56, 56 }, "battle_furia",    'F' },
-        { { 770,  60, 56, 56 }, "battle_tempo",    'T' },
-        { {  50, 470, 56, 56 }, "battle_silencio", 'S' },
-        { { 800, 450, 56, 56 }, "battle_orgulho",  'O' },
+        { {  50,  35, 56, 56 }, "furia",    "battle_furia",    'F' },
+        { { 770,  60, 56, 56 }, "tempo",    "battle_tempo",    'T' },
+        { {  50, 470, 56, 56 }, "silencio", "battle_silencio", 'S' },
+        { { 800, 450, 56, 56 }, "orgulho",  "battle_orgulho",  'O' },
     };
+
+    // --- Porta final (posição pode ser ajustada à vontade) ---
+    SDL_Rect door_{ 1100, 400, 64, 96 };
+    SDL_Texture* doorTex_ = nullptr;
 
     // helpers de colisão
     static bool aabbIntersect(const SDL_FRect& a, const SDL_Rect& b);
@@ -68,6 +75,9 @@ private:
     // sprites
     SpriteSheet  playerSheet_;   // sheet do player (overworld)
     SpriteSheet  portalSheet_;   // sheet dos portais (3x2 de 32x32)
+
+    // Mensagens temporárias
+    MessageBox msgBox_;
 
     int baseIndexForDir(Dir d) const;
 };

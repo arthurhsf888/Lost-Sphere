@@ -15,6 +15,20 @@ struct GameState {
     // cena de batalha para onde devemos ir após escolher o set
     std::string nextBattleSceneId = "battle_furia";
 
+    // --- NOVO: flags de bosses derrotados ---
+    bool deadFuria    = false;
+    bool deadTempo    = false;
+    bool deadSilencio = false;
+    bool deadOrgulho  = false;
+
+    // --- NOVO: portal que levou à batalha atual ---
+    std::string lastPortalId;
+
+    // --- NOVO: todos os quatro foram derrotados? ---
+    bool allBossesDefeated() const {
+        return deadFuria && deadTempo && deadSilencio && deadOrgulho;
+    }
+
     std::string setName() const {
         switch (set) {
             case PlayerSet::Guerreiro: return "Guerreiro";

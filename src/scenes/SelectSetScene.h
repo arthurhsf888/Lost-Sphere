@@ -2,7 +2,7 @@
 #include "Scene.h"
 #include "SceneManager.h"
 #include "Text.h"
-#include "GameState.h"
+#include "../GameState.h"
 #include <SDL.h>
 #include <array>
 

@@ -1,12 +1,28 @@
 #include "BattleScene.h"
-#include <SDL.h>
 #include <algorithm>
 #include <cmath>
 
+// Helper: desenha um círculo preenchido no SDL_Renderer
+static void drawFilledCircle(SDL_Renderer* r, int cx, int cy, int radius) {
+    if (radius <= 0) return;
+    for (int dy = -radius; dy <= radius; ++dy) {
+        int dxMax = (int)std::sqrt(float(radius * radius - dy * dy));
+        SDL_Rect line{ cx - dxMax, cy + dy, 2*dxMax + 1, 1 };
+        SDL_RenderFillRect(r, &line);
+    }
+}
+
 BattleScene::~BattleScene() {
-  if (texPlayer_)     SDL_DestroyTexture(texPlayer_);
-  if (bossSheet_.tex) SDL_DestroyTexture(bossSheet_.tex);
-  if (bg_)            SDL_DestroyTexture(bg_);
+  // Hero
+  if (heroIdleSheet_.tex)  SDL_DestroyTexture(heroIdleSheet_.tex);
+  if (heroAtk1Sheet_.tex)  SDL_DestroyTexture(heroAtk1Sheet_.tex);
+  if (heroAtk2Sheet_.tex)  SDL_DestroyTexture(heroAtk2Sheet_.tex);
+
+  // Boss
+  if (bossSheet_.tex)      SDL_DestroyTexture(bossSheet_.tex);
+
+  // Background
+  if (bg_)                 SDL_DestroyTexture(bg_);
 }
 
 void BattleScene::resetFromSet() {
@@ -49,11 +65,27 @@ void BattleScene::resetFromSet() {
   infoMsg_.clear();
   dmgMsg_.clear();
 
-  wasEnraged_      = boss_->enraged();
-  enrageFlash_     = 0.f;
-  bossAnimState_   = BossAnimState::Idle;
-  bossAttackTimer_ = 0.f;
+  wasEnraged_        = boss_->enraged();
+  enrageFlash_       = 0.f;
+  bossAnimState_     = BossAnimState::Idle;
+  bossAttackTimer_   = 0.f;
   playerResultTimer_ = 0.f;
+
+  // --- Hero settings ---
+  heroDef_   = heroAnimFor(gs_->set);
+  heroState_ = HeroAnimState::Idle;
+  heroAnim_  = Anim{}; // zera tempo
+
+  // VFX reset
+  vfx_ = HeroVfx{};
+
+  // se mudar de set no meio da mesma cena, limpamos sprites antigos
+  if (heroIdleSheet_.tex) { SDL_DestroyTexture(heroIdleSheet_.tex); heroIdleSheet_.tex = nullptr; }
+  if (heroAtk1Sheet_.tex) { SDL_DestroyTexture(heroAtk1Sheet_.tex); heroAtk1Sheet_.tex = nullptr; }
+  if (heroAtk2Sheet_.tex) { SDL_DestroyTexture(heroAtk2Sheet_.tex); heroAtk2Sheet_.tex = nullptr; }
+
+  // Boss sprites reset também (caso mude portal)
+  if (bossSheet_.tex) { SDL_DestroyTexture(bossSheet_.tex); bossSheet_.tex = nullptr; }
 }
 
 void BattleScene::handleEvent(const SDL_Event& e) {
@@ -117,7 +149,21 @@ void BattleScene::doPlayerAction() {
   infoMsg_.clear();
   dmgMsg_.clear();
 
-  // --- Ação "Atacar" ---
+  // limpa VFX antigo
+  vfx_ = HeroVfx{};
+
+  // estado padrão do herói: Idle (vai ser sobrescrito abaixo se for o caso)
+  heroState_ = HeroAnimState::Idle;
+
+  // Coordenadas "centro" do herói e do boss (para VFX) considerando escala
+  float heroCenterX = float(heroX_) + heroDef_.frameW * heroScale_ * 0.5f;
+  float heroCenterY = float(heroY_) + heroDef_.frameH * heroScale_ * 0.5f;
+
+  SpriteInfo siForPos = boss_->sprite();
+  float bossCenterX = float(bossX_) + siForPos.fw * bossScale_ * 0.5f;
+  float bossCenterY = float(bossY_) + siForPos.fh * bossScale_ * 0.5f;
+
+  // --- Ação "Atacar" --- (menuIndex_ == 0)
   if (menuIndex_ == 0) {
     const Attack& atk = (atkIndex_ == 0 ? atkA_ : atkB_);
 
@@ -138,51 +184,101 @@ void BattleScene::doPlayerAction() {
     // feedback principal de dano
     dmgMsg_ = "Dano: " + std::to_string(lastDamageP_);
 
-    // Orgulho reflete total do dano recebido
-    /*
-    if (std::string(boss_->name()) == "Orgulho" && lastDamageP_ > 0) {
-      playerHP_ = std::max(0, playerHP_ - lastDamageP_);
-      if (!dmgMsg_.empty()) dmgMsg_ += " ";
-      dmgMsg_ += "O chefe refletiu o dano!";
+    // Animação do herói: Attack1/Attack2
+    heroState_ = (atkIndex_ == 0 ? HeroAnimState::Attack1 : HeroAnimState::Attack2);
+    heroAnim_  = Anim{}; // reseta ciclo de animação
+
+    // Cor roxa para qualquer ataque
+    SDL_Color purple{255, 0, 0, 50};
+
+    // ----- VFX dependendo do tipo de dano -----
+    if (atk.type == DamageType::Fisico) {
+      // Slash roxo perto do boss
+      vfx_.type     = HeroVfxType::Slash;
+      vfx_.duration = 0.25f;
+      vfx_.t        = 0.f;
+      vfx_.startX   = bossCenterX;
+      vfx_.startY   = bossCenterY;
+      vfx_.endX     = bossCenterX;
+      vfx_.endY     = bossCenterY;
+      vfx_.color    = purple;
+    }
+    else if (atk.type == DamageType::Distancia) {
+      // Projétil roxo do herói até o boss
+      vfx_.type     = HeroVfxType::Projectile;
+      vfx_.duration = 0.4f;
+      vfx_.t        = 0.f;
+      vfx_.startX   = heroCenterX + 10.f;
+      vfx_.startY   = heroCenterY - 10.f;
+      vfx_.endX     = bossCenterX;
+      vfx_.endY     = bossCenterY - 20.f;
+      vfx_.color    = purple;
+    }
+    else if (atk.type == DamageType::Magico) {
+      // Aura roxa mágica ao redor do herói
+      vfx_.type     = HeroVfxType::Buff;
+      vfx_.duration = 0.35f;
+      vfx_.t        = 0.f;
+      vfx_.startX   = heroCenterX;
+      vfx_.startY   = heroCenterY;
+      vfx_.endX     = heroCenterX;
+      vfx_.endY     = heroCenterY;
+      vfx_.color    = purple;
     }
 
-    // feedback de eficácia
-    if (mult > 1.01f) {
-      if (!dmgMsg_.empty()) dmgMsg_ += " ";
-      dmgMsg_ += "Foi super eficaz!";
-    } else if (mult < 0.99f) {
-      if (!dmgMsg_.empty()) dmgMsg_ += " ";
-      dmgMsg_ += "Pouco eficaz...";
-    }*/
-
-    // Chefe morreu -> termina batalha
+    // Chefe morreu -> termina batalha E marca como derrotado no GameState
     if (boss_->hp <= 0) {
+      markBossDefeated();
       phase_ = Phase::Win;
       return;
     }
   }
-  // --- Ação "Pocao" ---
+  // --- Ação "Pocao" --- (menuIndex_ == 1)
   else if (menuIndex_ == 1) {
     if (gs_->potions > 0) {
       gs_->potions--;
       playerHP_ = std::min(playerHPMax_, playerHP_ + 12);
       infoMsg_ = "Voce usou uma Pocao.";
+      heroState_ = HeroAnimState::Potion;
+      heroAnim_  = Anim{};
+
+      // Aura verde de cura em volta do herói
+      vfx_.type     = HeroVfxType::Buff;
+      vfx_.duration = 0.45f;
+      vfx_.t        = 0.f;
+      vfx_.startX   = heroCenterX;
+      vfx_.startY   = heroCenterY;
+      vfx_.endX     = heroCenterX;
+      vfx_.endY     = heroCenterY;
+      vfx_.color    = SDL_Color{ 80, 220, 120, 50 }; // verde
     } else {
       errorMsg_ = "Sem pocoes!";
       phase_ = Phase::Menu;
       return;
     }
   }
-  // --- Ação "Recuperar" ---
+  // --- Ação "Recuperar" --- (menuIndex_ == 2)
   else if (menuIndex_ == 2) {
     playerST_ = std::min(playerSTMax_, playerST_ + 4);
     infoMsg_ = "Voce respirou e recuperou ST.";
+    heroState_ = HeroAnimState::Recover;
+    heroAnim_  = Anim{};
+
+    // Aura amarela em volta do herói
+    vfx_.type     = HeroVfxType::Buff;
+    vfx_.duration = 0.45f;
+    vfx_.t        = 0.f;
+    vfx_.startX   = heroCenterX;
+    vfx_.startY   = heroCenterY;
+    vfx_.endX     = heroCenterX;
+    vfx_.endY     = heroCenterY;
+    vfx_.color    = SDL_Color{ 245, 220, 120, 50 }; // amarelo
   }
 
   // Se chegou aqui, a ação do player foi válida e a luta continua:
   // ficamos em PlayerTurn para mostrar o resultado e iniciamos o timer
   phase_ = Phase::PlayerTurn;
-  playerResultTimer_ = 2.0f;  // <<< aqui está o delay de 2 segundos
+  playerResultTimer_ = 2.0f;  // <<< delay de 2 segundos antes do boss
 }
 
 void BattleScene::doEnemyAction() {
@@ -196,7 +292,64 @@ void BattleScene::doEnemyAction() {
     nextPhaseAfterEnemy_ = Phase::Menu;
 }
 
+// --- NOVO: marca boss derrotado no GameState com base em lastPortalId (ou nome) ---
+void BattleScene::markBossDefeated() {
+  if (!gs_) return;
+
+  if (!gs_->lastPortalId.empty()) {
+    const std::string& id = gs_->lastPortalId;
+    if      (id == "furia")    gs_->deadFuria    = true;
+    else if (id == "tempo")    gs_->deadTempo    = true;
+    else if (id == "silencio") gs_->deadSilencio = true;
+    else if (id == "orgulho")  gs_->deadOrgulho  = true;
+  } else if (boss_) {
+    std::string n = std::string(boss_->name());
+    if      (n == "Furia")    gs_->deadFuria    = true;
+    else if (n == "Tempo")    gs_->deadTempo    = true;
+    else if (n == "Silencio") gs_->deadSilencio = true;
+    else if (n == "Orgulho")  gs_->deadOrgulho  = true;
+  }
+}
+
 void BattleScene::update(float dt) {
+  if (!initialized_) { resetFromSet(); initialized_ = true; }
+
+  // 0) Atualiza animação do HERÓI conforme estado atual
+  int heroFrames = heroDef_.idleFrames;
+  float heroFps  = 6.f;
+
+  switch (heroState_) {
+    case HeroAnimState::Idle:
+      heroFrames = heroDef_.idleFrames;
+      heroFps    = 6.f;
+      break;
+    case HeroAnimState::Attack1:
+      heroFrames = heroDef_.atk1Frames;
+      heroFps    = 10.f;
+      break;
+    case HeroAnimState::Attack2:
+      heroFrames = heroDef_.atk2Frames;
+      heroFps    = 10.f;
+      break;
+    case HeroAnimState::Potion:
+    case HeroAnimState::Recover:
+      heroFrames = heroDef_.idleFrames;
+      heroFps    = 6.f;
+      break;
+  }
+
+  heroAnim_.fps   = heroFps;
+  heroAnim_.count = std::max(1, heroFrames);
+  heroAnim_.update(dt);
+
+  // Atualiza VFX do herói
+  if (vfx_.type != HeroVfxType::None) {
+    vfx_.t += dt;
+    if (vfx_.t >= vfx_.duration) {
+      vfx_.type = HeroVfxType::None;
+    }
+  }
+
   // 1) Espera do resultado do player antes do inimigo agir
   if (phase_ == Phase::PlayerTurn) {
     if (playerResultTimer_ > 0.f) {
@@ -204,9 +357,9 @@ void BattleScene::update(float dt) {
       if (playerResultTimer_ <= 0.f) {
         // quando o timer acaba, inicia turno do inimigo (se o boss ainda estiver vivo)
         if (boss_->hp > 0) {
-          phase_             = Phase::EnemyTurn;
-          bossAnimState_     = BossAnimState::Idle;
-          bossAttackTimer_   = 0.f;
+          phase_              = Phase::EnemyTurn;
+          bossAnimState_      = BossAnimState::Idle;
+          bossAttackTimer_    = 0.f;
           nextPhaseAfterEnemy_= Phase::Menu;
         } else {
           phase_ = Phase::Win;
@@ -228,6 +381,12 @@ void BattleScene::update(float dt) {
       if (bossAttackTimer_ <= 0.f) {
         bossAnimState_ = BossAnimState::Idle;
         phase_         = nextPhaseAfterEnemy_;
+
+        // ao voltar para o menu, herói volta para Idle
+        if (phase_ == Phase::Menu && heroState_ != HeroAnimState::Idle) {
+          heroState_ = HeroAnimState::Idle;
+          heroAnim_  = Anim{};
+        }
       }
     }
   }
@@ -293,22 +452,65 @@ void BattleScene::render(SDL_Renderer* r) {
   drawBars(r, 80, 80, 240, 16, float(playerHP_) / playerHPMax_);
   drawBars(r, 950, 80, 240, 16, float(boss_->hp)  / boss_->maxHP());
 
-  // Player
-  if (!texPlayer_) texPlayer_ = loadTexture(r, "assets/sprites/player/battle_idle.png");
-  SDL_Rect playerDst{ 340, 350, 64, 64 };
-  if (texPlayer_) SDL_RenderCopy(r, texPlayer_, nullptr, &playerDst);
-  else {
+  // -------- HERÓI (animação) --------
+  // Carrega sheets do herói sob demanda
+  if (!heroIdleSheet_.tex && !heroDef_.idlePath.empty()) {
+    heroIdleSheet_ = loadSpriteSheet(r, heroDef_.idlePath, heroDef_.frameW, heroDef_.frameH);
+  }
+  if (!heroAtk1Sheet_.tex && !heroDef_.atk1Path.empty()) {
+    heroAtk1Sheet_ = loadSpriteSheet(r, heroDef_.atk1Path, heroDef_.frameW, heroDef_.frameH);
+  }
+  if (!heroAtk2Sheet_.tex && !heroDef_.atk2Path.empty()) {
+    heroAtk2Sheet_ = loadSpriteSheet(r, heroDef_.atk2Path, heroDef_.frameW, heroDef_.frameH);
+  }
+
+  SpriteSheet* heroSheet = &heroIdleSheet_;
+  int frameCount = std::max(1, heroDef_.idleFrames);
+
+  switch (heroState_) {
+    case HeroAnimState::Idle:
+      heroSheet   = &heroIdleSheet_;
+      frameCount  = std::max(1, heroDef_.idleFrames);
+      break;
+    case HeroAnimState::Attack1:
+      heroSheet   = &heroAtk1Sheet_;
+      frameCount  = std::max(1, heroDef_.atk1Frames);
+      break;
+    case HeroAnimState::Attack2:
+      heroSheet   = &heroAtk2Sheet_;
+      frameCount  = std::max(1, heroDef_.atk2Frames);
+      break;
+    case HeroAnimState::Potion:
+    case HeroAnimState::Recover:
+      heroSheet   = &heroIdleSheet_;
+      frameCount  = std::max(1, heroDef_.idleFrames);
+      break;
+  }
+
+  int heroW = int(heroDef_.frameW * heroScale_);
+  int heroH = int(heroDef_.frameH * heroScale_);
+  SDL_Rect playerDst{ heroX_, heroY_, heroW, heroH };
+
+  if (heroSheet && heroSheet->tex) {
+    int frame = heroAnim_.frameOffset();
+    if (frame >= frameCount) frame = frameCount - 1;
+    SDL_Rect src = heroSheet->frameRect(frame);
+    SDL_RenderCopy(r, heroSheet->tex, &src, &playerDst);
+  } else {
+    // fallback caso algo dê errado no carregamento
     SDL_SetRenderDrawColor(r, 200, 220, 240, 255);
     SDL_RenderFillRect(r, &playerDst);
   }
 
-  // Boss via SpriteSheet
+  // -------- BOSS --------
   if (!bossSheet_.tex) {
     SpriteInfo si0 = boss_->sprite();
     bossSheet_ = loadSpriteSheet(r, si0.path, si0.fw, si0.fh);
   }
   SpriteInfo si = boss_->sprite();
-  SDL_Rect bossDst{ 740, 260, si.fw * 3, si.fh * 3 };
+  int bossW = int(si.fw * bossScale_);
+  int bossH = int(si.fh * bossScale_);
+  SDL_Rect bossDst{ bossX_, bossY_, bossW, bossH };
 
   // Índice do frame do boss
   int idx = si.idleIdx;
@@ -331,7 +533,38 @@ void BattleScene::render(SDL_Renderer* r) {
     SDL_RenderFillRect(r, &bossDst);
   }
 
-  // Textos principais
+  // -------- VFX do HERÓI (bolinhas) --------
+  if (vfx_.type != HeroVfxType::None) {
+    float alpha = (vfx_.duration > 0.f) ? std::clamp(vfx_.t / vfx_.duration, 0.f, 1.f) : 1.f;
+
+    SDL_SetRenderDrawColor(r, vfx_.color.r, vfx_.color.g, vfx_.color.b, vfx_.color.a);
+
+    if (vfx_.type == HeroVfxType::Slash) {
+      // círculo roxo "explodindo" perto do boss
+      int baseR = 50;
+      int radius = int(baseR * (1.0f - 0.4f * alpha));
+      drawFilledCircle(r, int(vfx_.startX), int(vfx_.startY), radius);
+    }
+    else if (vfx_.type == HeroVfxType::Projectile) {
+      // bolinha roxa indo do herói até o boss
+      float t = alpha;
+      float px = vfx_.startX + (vfx_.endX - vfx_.startX) * t;
+      float py = vfx_.startY + (vfx_.endY - vfx_.startY) * t;
+      int radius = 10;
+      drawFilledCircle(r, int(px), int(py), radius);
+    }
+    else if (vfx_.type == HeroVfxType::Buff) {
+      // aura circular em volta do herói
+      float pulse = 1.0f + 0.3f * std::sin(alpha * 3.14159f);
+      int baseR = std::max(heroW, heroH) / 3;
+      int radius = int(baseR * pulse);
+      float heroCenterX = float(heroX_) + heroW * 0.5f;
+      float heroCenterY = float(heroY_) + heroH * 0.5f;
+      drawFilledCircle(r, int(heroCenterX), int(heroCenterY), radius);
+    }
+  }
+
+  // -------- Textos principais --------
   if (text_) {
     SDL_Color white{245,245,255,255};
     SDL_Color red{255,0,0,255};
@@ -344,9 +577,9 @@ void BattleScene::render(SDL_Renderer* r) {
     text_->draw(r, "Pocoes: "+ std::to_string(gs_->potions), 80, 164, yellow);
   }
 
-  // Menu / submenus
+  // -------- Menu / submenus --------
   if (phase_ == Phase::Menu) {
-    const char* labels[3] = {"Atacar","Pocao","Recuperar"};
+    const char* labels[3] = {"Atacar","Poção HP","Recuperar ST"};
     for (int i=0;i<3;i++){
       SDL_Rect b{ 90, 390 + i*50, 200, 40 };
       if (i == menuIndex_) SDL_SetRenderDrawColor(r, 98, 0, 255, 255);
@@ -413,18 +646,6 @@ void BattleScene::render(SDL_Renderer* r) {
       text_->draw(r, dmgMsg_, dmgX, dmgY, yellow);
     }
   }
-
-  // impactos visuais simples
-  /*if (lastDamageP_ > 0) {
-    SDL_Rect hit{ 540, 140, 40, 40 };
-    SDL_SetRenderDrawColor(r, 220,120,120,255);
-    SDL_RenderFillRect(r, &hit);
-  }
-  if (lastDamageE_ > 0) {
-    SDL_Rect hit{ 160, 180, 40, 40 };
-    SDL_SetRenderDrawColor(r, 120,120,220,255);
-    SDL_RenderFillRect(r, &hit);
-  }*/
 
   SDL_RenderPresent(r);
 }
