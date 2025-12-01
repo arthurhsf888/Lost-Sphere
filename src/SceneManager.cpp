@@ -11,4 +11,6 @@ void SceneManager::setActive(const std::string& name) {
   current_ = it->second.get();
 }
 
-Scene* SceneManager::active() { return current_; }
+Scene* SceneManager::active() {
+  return current_;
+}

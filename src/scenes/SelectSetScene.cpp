@@ -1,83 +1,135 @@
 #include "SelectSetScene.h"
-#include "Assets.h"      // para loadTexture
+#include "Assets.h"
 #include "../SoundManager.h"
 #include <SDL.h>
 #include <array>
 
-// instância global do gerenciador de som (definida em outro lugar, ex: main.cpp)
+// -----------------------------------------------------------------------------
+// Instância global do gerenciador de som (definida em main.cpp)
+// -----------------------------------------------------------------------------
 extern SoundManager gSound;
 
+// -----------------------------------------------------------------------------
+// HANDLE EVENT — navegação do menu e confirmação da classe
+// -----------------------------------------------------------------------------
 void SelectSetScene::handleEvent(const SDL_Event& e) {
     if (e.type == SDL_KEYDOWN) {
         const SDL_Keycode key = e.key.keysym.sym;
 
+        // ---------------------------------------------------------------------
+        // Mover cursor (↑ e ↓)
+        // ---------------------------------------------------------------------
         if (key == SDLK_UP) {
-            idx_ = (idx_ + 2) % 3;
-            if (gSound.ok()) gSound.playSfx("select_button");   // <-- antes era "select_button"
+            idx_ = (idx_ + 2) % 3; // 0→2, 1→0, 2→1 (loop)
+            if (gSound.ok()) gSound.playSfx("select_button");
         }
         if (key == SDLK_DOWN) {
-            idx_ = (idx_ + 1) % 3;
-            if (gSound.ok()) gSound.playSfx("select_button");   // <-- antes era "select_button"
+            idx_ = (idx_ + 1) % 3; // 0→1→2→0
+            if (gSound.ok()) gSound.playSfx("select_button");
         }
 
+        // ---------------------------------------------------------------------
+        // ESC → voltar ao overworld
+        // ---------------------------------------------------------------------
         if (key == SDLK_ESCAPE) {
-            // som de "voltar"
             if (gSound.ok()) gSound.playSfx("click_button");
-            // volta pro overworld e garante música do overworld
             if (gSound.ok()) gSound.playMusic("overworld_theme", -1);
             sm_.setActive("overworld");
         }
 
+        // ---------------------------------------------------------------------
+        // ENTER → confirmar classe e ir para a batalha
+        // ---------------------------------------------------------------------
         if (key == SDLK_RETURN) {
             if (!gs_) return;
 
             if (gSound.ok()) gSound.playSfx("click_button");
 
-            // define o set escolhido
+            // Define o set de acordo com o índice selecionado
             gs_->set = (idx_ == 0 ? PlayerSet::Guerreiro
-                         : idx_ == 1 ? PlayerSet::Mago
-                                     : PlayerSet::Cacador);
+                        : idx_ == 1 ? PlayerSet::Mago
+                                    : PlayerSet::Cacador);
 
-            // reset mini-inventário/recursos para cada luta
             gs_->potions = 2;
 
-            // vai para a batalha escolhida no overworld (fallback se vazio)
+            // Vai para a batalha correspondente ao portal
             if (!gs_->nextBattleSceneId.empty()) {
                 sm_.setActive(gs_->nextBattleSceneId);
             } else {
-                sm_.setActive("battle_furia");
+                sm_.setActive("battle_furia"); // fallback defensivo
             }
-            // A BattleScene já cuida de tocar "battle_theme" no resetFromSet()
         }
     }
 }
 
+// -----------------------------------------------------------------------------
+// RENDER — desenha o menu de seleção de classe + dica do boss
+// -----------------------------------------------------------------------------
 void SelectSetScene::render(SDL_Renderer* r) {
+
+    // Fundo sólido
     SDL_SetRenderDrawColor(r, 12, 14, 22, 255);
     SDL_RenderClear(r);
 
-    // ---------- Painel MAIOR ----------
-    // Tela lógica é 1280x720, então faço um painel grande e centralizado-ish
-    SDL_Rect panel{ 200, 80, 880, 480 };
+    // -------------------------------------------------------------------------
+    // RECARREGAR DICA DO BOSS (painel da direita)
+    // Troca automaticamente quando o portal muda
+    // -------------------------------------------------------------------------
+    if (gs_) {
+        const std::string curPortal = gs_->lastPortalId;
+
+        // Caso ainda não exista textura OU o portal mudou
+        if (!hintTex_ || curPortal != lastHintPortalId_) {
+
+            // Liberar textura antiga
+            if (hintTex_) {
+                SDL_DestroyTexture(hintTex_);
+                hintTex_ = nullptr;
+            }
+
+            lastHintPortalId_ = curPortal;
+
+            // Define o PNG correto
+            std::string hintPath = "assets/ui/dica_default.png";
+
+            if (curPortal == "furia")         hintPath = "assets/ui/dica_boss_furia.png";
+            else if (curPortal == "silencio") hintPath = "assets/ui/dica_boss_silencio.png";
+            else if (curPortal == "tempo")    hintPath = "assets/ui/dica_boss_tempo.png";
+            else if (curPortal == "orgulho")  hintPath = "assets/ui/dica_boss_orgulho.png";
+
+            // Carrega textura
+            hintTex_ = loadTexture(r, hintPath);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Painel principal (lado esquerdo)
+    // -------------------------------------------------------------------------
+    SDL_Rect panel{ 80, 80, 720, 480 };
     SDL_SetRenderDrawColor(r, 25, 28, 42, 255);
     SDL_RenderFillRect(r, &panel);
 
+    // Labels das classes
     const std::array<const char*,3> labels{ "Guerreiro", "Mago", "Caçador" };
     const std::array<const char*,3> desc{
-        "HP alto, golpes fisicos fortes. Custo ST maior, dano consistente.",
-        "Dano explosivo com magia. Custo ST/gestao mais exigente.",
-        "Golpes rapidos de distancia. Boa economia de ST."
+        "HP alto, golpes físicos fortes.",
+        "Dano explosivo com magia.",
+        "Golpes rápidos de distância."
     };
 
+    // Título do painel
     if (text_) {
-        text_->draw(r,
+        text_->draw(
+            r,
             "Selecione seu Set (Enter confirma, Esc volta)",
-            panel.x + 40,
+            panel.x + 30,
             panel.y + 20
         );
     }
 
-    // ---------- Ícones das classes (carregados uma vez) ----------
+    // -------------------------------------------------------------------------
+    // Ícones das classes — carregados apenas uma vez
+    // -------------------------------------------------------------------------
     static bool iconsLoaded = false;
     static SDL_Texture* icons[3] = { nullptr, nullptr, nullptr };
 
@@ -88,16 +140,19 @@ void SelectSetScene::render(SDL_Renderer* r) {
         iconsLoaded = true;
     }
 
-    // ---------- Itens de seleção MAIORES ----------
-    const int itemH   = 110;
-    const int itemGap = 20;
-    const int itemX   = panel.x + 30;
-    const int itemW   = panel.w - 60;
-    const int startY  = panel.y + 70;
-
-    const int iconSize = 72;  // tamanho do ícone (quadrado)
+    // -------------------------------------------------------------------------
+    // Itens de seleção (cada classe é um retângulo clicável)
+    // -------------------------------------------------------------------------
+    const int itemH     = 110;
+    const int itemGap   = 20;
+    const int itemX     = panel.x + 20;
+    const int itemW     = panel.w - 40;
+    const int startY    = panel.y + 70;
+    const int iconSize  = 72;
 
     for (int i = 0; i < 3; ++i) {
+
+        // Caixa do item
         SDL_Rect item{
             itemX,
             startY + i * (itemH + itemGap),
@@ -105,11 +160,13 @@ void SelectSetScene::render(SDL_Renderer* r) {
             itemH
         };
 
+        // Cor de destaque
         if (i == idx_) SDL_SetRenderDrawColor(r, 98, 0, 255, 255);
         else           SDL_SetRenderDrawColor(r, 70, 70, 90, 255);
+
         SDL_RenderFillRect(r, &item);
 
-        // ícone à esquerda
+        // Ícone da classe
         if (icons[i]) {
             SDL_Rect iconDst{
                 item.x + 16,
@@ -119,24 +176,26 @@ void SelectSetScene::render(SDL_Renderer* r) {
             };
             SDL_RenderCopy(r, icons[i], nullptr, &iconDst);
 
-            // posição base do texto depois do ícone
+            // Textos (nome + descrição)
             if (text_) {
-                int textX = iconDst.x + iconDst.w + 16;
-                int titleY = item.y + 18;
-                int descY  = item.y + 50;
-
-                text_->draw(r, labels[i], textX, titleY);
-                text_->draw(r, desc[i],   textX, descY);
+                int tx = iconDst.x + iconDst.w + 16;
+                text_->draw(r, labels[i], tx, item.y + 18);
+                text_->draw(r, desc[i],   tx, item.y + 50);
             }
-        } else if (text_) {
-            // fallback se não carregar o ícone: só texto, mais pra esquerda
-            int textX = item.x + 16;
-            int titleY = item.y + 18;
-            int descY  = item.y + 50;
-
-            text_->draw(r, labels[i], textX, titleY);
-            text_->draw(r, desc[i],   textX, descY);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Painel da dica do boss — grande PNG ao lado direito
+    // -------------------------------------------------------------------------
+    if (hintTex_) {
+        SDL_Rect dst;
+        dst.w = 900;
+        dst.h = 700;
+        dst.x = 1280 - dst.w + 210;
+        dst.y = 0;
+
+        SDL_RenderCopy(r, hintTex_, nullptr, &dst);
     }
 
     SDL_RenderPresent(r);

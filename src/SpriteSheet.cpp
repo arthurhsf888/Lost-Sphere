@@ -12,10 +12,11 @@ SpriteSheet loadSpriteSheet(SDL_Renderer* r, const std::string& path, int frameW
     sh.fw = frameW;
     sh.fh = frameH;
     sh.tex = loadTexture(r, path);
+
     if (sh.tex) {
         SDL_QueryTexture(sh.tex, nullptr, nullptr, &sh.texW, &sh.texH);
-        sh.cols = (sh.fw > 0) ? (sh.texW / sh.fw) : 0;
-        sh.rows = (sh.fh > 0) ? (sh.texH / sh.fh) : 0;
+        sh.cols = sh.texW / sh.fw;
+        sh.rows = sh.texH / sh.fh;
     }
     return sh;
 }
@@ -23,6 +24,6 @@ SpriteSheet loadSpriteSheet(SDL_Renderer* r, const std::string& path, int frameW
 void drawFrame(SDL_Renderer* r, const SpriteSheet& sh, int idx, int x, int y, float scale) {
     if (!sh.tex || sh.cols == 0 || sh.rows == 0) return;
     SDL_Rect src = sh.frameRect(idx);
-    SDL_Rect dst{ x, y, int(src.w * scale), int(src.h * scale) };
+    SDL_Rect dst { x, y, int(src.w * scale), int(src.h * scale) };
     SDL_RenderCopy(r, sh.tex, &src, &dst);
 }

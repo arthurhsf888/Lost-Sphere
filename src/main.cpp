@@ -92,7 +92,7 @@ int main(int, char**) {
   }
 
   SDL_Window* window = SDL_CreateWindow(
-      "Lost Sphere (skeleton)",
+      "Lost Sphere",
       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       1280, 720, SDL_WINDOW_SHOWN);
   if (!window) {

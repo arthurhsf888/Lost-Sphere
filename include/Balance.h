@@ -2,13 +2,13 @@
 
 enum class DamageType { Fisico, Magico, Distancia };
 
+// Tabela de multiplicadores de dano contra bosses
 struct Balance {
-    // multiplicadores do Boss Fúria vs tipo do golpe
     static float bossFuriaMultiplier(DamageType t) {
         switch (t) {
-            case DamageType::Fisico:     return 1.0f; // neutro
-            case DamageType::Magico:     return 1.2f; // fraco contra magia
-            case DamageType::Distancia:  return 0.8f; // resistente a distância
+            case DamageType::Fisico:     return 1.0f;
+            case DamageType::Magico:     return 1.0f;
+            case DamageType::Distancia:  return 1.0f;
         }
         return 1.0f;
     }

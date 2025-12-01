@@ -6,6 +6,7 @@
 class Text {
 public:
     Text() = default;
+
     ~Text() {
         if (font_) {
             TTF_CloseFont(font_);
@@ -21,18 +22,17 @@ public:
         return font_ != nullptr;
     }
 
-    // Versão antiga (default) – usa cor fixa clarinha
     void draw(SDL_Renderer* r, const std::string& s, int x, int y) {
         SDL_Color col{230, 230, 240, 255};
         draw(r, s, x, y, col);
     }
 
-    // NOVA sobrecarga: permite escolher a cor
     void draw(SDL_Renderer* r,
               const std::string& s,
               int x, int y,
               SDL_Color col) {
         if (!font_) return;
+
         SDL_Surface* surf = TTF_RenderUTF8_Blended(font_, s.c_str(), col);
         if (!surf) return;
 

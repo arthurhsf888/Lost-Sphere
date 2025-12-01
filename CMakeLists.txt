@@ -4,10 +4,9 @@ project(lost_sphere LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# SDKs manuais (você passa *_DIR nas CMake Options do CLion)
-find_package(SDL2 CONFIG REQUIRED)          # SDL2-2.32.2
-find_package(SDL2_ttf CONFIG REQUIRED)      # SDL2_ttf-2.20.2
-find_package(SDL2_image CONFIG REQUIRED)    # SDL2_image-2.8.8
+find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL2_ttf CONFIG REQUIRED)
+find_package(SDL2_image CONFIG REQUIRED)
 find_package(SDL2_mixer CONFIG REQUIRED)
 
 add_executable(${PROJECT_NAME}
